@@ -59,5 +59,6 @@ jobs:
           name: Rolling Release
           allowUpdates: true
           makeLatest: true
-          artifacts: ${{ github.workspace }}/x64/Release/OptiPatcher-${{ steps.buildtime.outputs.timestamp }}.asi
+          replacesArtifacts: true
+          artifacts: ${{ github.workspace }}/x64/Release/OptiPatcher.asi
           token: ${{ secrets.GITHUB_TOKEN }}
