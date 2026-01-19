@@ -5,6 +5,7 @@ An **ASI Plugin for OptiScaler** for exposing DLSS/DLSS-FG inputs without spoofi
 > * **For AMD and Intel users!**
 > * _Helps Intel Arc users a lot because newer versions of Unreal Engine have issues with spoofing, causing `D3D12 not supported` errors._
 > * **OptiPatcher helps avoid performance overhead or crashes/artifacts caused by Dxgi spoofing!**
+> * _All patches are made for the **latest game version** at the time of uploading!_
 
 ## Currently supported games
 * Check the [Game Support list](GameSupport.md)
