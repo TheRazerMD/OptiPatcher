@@ -18,23 +18,20 @@ jobs:
     runs-on: windows-latest
 
     steps:
-      # Checkout full history (required for tags)
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           submodules: true
           fetch-depth: 0
 
-      # MSBuild setup
       - name: Add MSBuild to PATH
         uses: microsoft/setup-msbuild@v2
 
-      # Build solution
       - name: Build
         working-directory: ${{ env.GITHUB_WORKSPACE }}
         run: msbuild /m /p:Configuration=${{ env.BUILD_CONFIGURATION }} ${{ env.SOLUTION_FILE_PATH }} /verbosity:minimal
 
-      # Generate timestamp (for Actions artifact only)
+      # Generate timestamp (for Actions artifact naming)
       - name: Generate timestamp
         id: buildtime
         shell: pwsh
@@ -42,7 +39,7 @@ jobs:
           $ts = Get-Date -Format "yyyyMMdd_HHmm"
           echo "timestamp=$ts" >> $env:GITHUB_OUTPUT
 
-      # Upload per-run Actions artifact (kept historically)
+      # Upload per-run Actions artifact
       - name: Upload Actions Artifact
         uses: actions/upload-artifact@v4
         with:
@@ -50,7 +47,7 @@ jobs:
           path: ${{ github.workspace }}/x64/Release/OptiPatcher.asi
           if-no-files-found: error
 
-      # Generate Rolling Release notes (ALL commits since last version tag)
+      # Generate Rolling Release notes (vertical bullet points)
       - name: Generate Rolling Release notes
         shell: pwsh
         run: |
@@ -63,7 +60,9 @@ jobs:
             $range = "HEAD"
           }
 
-          $commits = git log $range --pretty=format:"- %s (%h)"
+          $commits = git log $range --pretty=format:"- %s (%h)" | Out-String
+          $commits = $commits.Trim()
+
           if (-not $commits) {
             $commits = "- No changes since last release"
           }
@@ -76,11 +75,11 @@ jobs:
           **Build date:** $(Get-Date -Format "yyyy-MM-dd HH:mm")
 
           ### Changes since last release
-          
+
           $commits
           "@ | Out-File release-notes.md -Encoding utf8
 
-      # Publish / Update Rolling Release
+      # Publish / Update Rolling Release (single ASI, replaced each build)
       - name: Publish Rolling Release
         uses: ncipollo/release-action@v1
         with:
@@ -88,7 +87,7 @@ jobs:
           name: Rolling Release
           allowUpdates: true
           makeLatest: true
-          replacesArtifacts: true       # replaces OptiPatcher.asi
+          replacesArtifacts: true
           artifacts: ${{ github.workspace }}/x64/Release/OptiPatcher.asi
           bodyFile: release-notes.md
           token: ${{ secrets.GITHUB_TOKEN }}
