@@ -18,20 +18,23 @@ jobs:
     runs-on: windows-latest
 
     steps:
+      # Checkout full history (required for tags)
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           submodules: true
-          fetch-depth: 0   # required for tags + history
+          fetch-depth: 0
 
+      # MSBuild setup
       - name: Add MSBuild to PATH
         uses: microsoft/setup-msbuild@v2
 
+      # Build solution
       - name: Build
         working-directory: ${{ env.GITHUB_WORKSPACE }}
         run: msbuild /m /p:Configuration=${{ env.BUILD_CONFIGURATION }} ${{ env.SOLUTION_FILE_PATH }} /verbosity:minimal
 
-      # Generate timestamp
+      # Generate timestamp (for Actions artifact only)
       - name: Generate timestamp
         id: buildtime
         shell: pwsh
@@ -39,15 +42,7 @@ jobs:
           $ts = Get-Date -Format "yyyyMMdd_HHmm"
           echo "timestamp=$ts" >> $env:GITHUB_OUTPUT
 
-      # Prepare timestamped ASI
-      - name: Prepare timestamped ASI for release
-        shell: pwsh
-        run: |
-          $src = "${{ github.workspace }}\x64\Release\OptiPatcher.asi"
-          $dst = "${{ github.workspace }}\x64\Release\OptiPatcher-${{ steps.buildtime.outputs.timestamp }}.asi"
-          Copy-Item $src $dst
-
-      # Upload Actions artifact
+      # Upload per-run Actions artifact (kept historically)
       - name: Upload Actions Artifact
         uses: actions/upload-artifact@v4
         with:
@@ -55,39 +50,32 @@ jobs:
           path: ${{ github.workspace }}/x64/Release/OptiPatcher.asi
           if-no-files-found: error
 
-      # Initialize rolling tag if missing (from latest v* tag)
-      - name: Initialize rolling tag if missing
+      # Generate Rolling Release notes (ALL commits since last version tag)
+      - name: Generate Rolling Release notes
         shell: pwsh
         run: |
           git fetch --tags
 
-          if (-not (git rev-parse rolling 2>$null)) {
-            $base = git describe --tags --abbrev=0 --match "v*" 2>$null
-            if ($base) {
-              git tag rolling $base
-            } else {
-              git tag rolling HEAD
-            }
-            git push origin rolling
+          $base = git describe --tags --abbrev=0 --match "v*" 2>$null
+          if ($base) {
+            $range = "$base..HEAD"
+          } else {
+            $range = "HEAD"
           }
 
-      # Generate formatted Rolling Release notes (bullet points)
-      - name: Generate Rolling Release notes
-        shell: pwsh
-        run: |
-          $commits = git log rolling..HEAD --pretty=format:"- %s (%h)"
-
+          $commits = git log $range --pretty=format:"- %s (%h)"
           if (-not $commits) {
-            $commits = "- No changes since last build"
+            $commits = "- No changes since last release"
           }
 
           @"
           ## Rolling Release
 
+          **Base version:** $base  
           **Build commit:** `${{ github.sha }}`  
-          **Build date:** $(Get-Date -Format "yyyy-MM-dd HH:mm:ss")
+          **Build date:** $(Get-Date -Format "yyyy-MM-dd HH:mm")
 
-          ### Changes since last build
+          ### Changes since last release
           
           $commits
           "@ | Out-File release-notes.md -Encoding utf8
@@ -100,13 +88,7 @@ jobs:
           name: Rolling Release
           allowUpdates: true
           makeLatest: true
+          replacesArtifacts: true       # replaces OptiPatcher.asi
+          artifacts: ${{ github.workspace }}/x64/Release/OptiPatcher.asi
           bodyFile: release-notes.md
-          artifacts: ${{ github.workspace }}/x64/Release/OptiPatcher-${{ steps.buildtime.outputs.timestamp }}.asi
           token: ${{ secrets.GITHUB_TOKEN }}
-
-      # Move rolling tag forward so next build only shows new commits
-      - name: Move rolling tag to latest commit
-        shell: pwsh
-        run: |
-          git tag -f rolling
-          git push -f origin rolling
