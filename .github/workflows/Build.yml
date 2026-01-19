@@ -55,7 +55,7 @@ jobs:
           path: ${{ github.workspace }}/x64/Release/OptiPatcher.asi
           if-no-files-found: error
 
-      # Ensure rolling tag exists (auto-init from latest v* tag)
+      # Initialize rolling tag if missing (from latest v* tag)
       - name: Initialize rolling tag if missing
         shell: pwsh
         run: |
@@ -71,23 +71,25 @@ jobs:
             git push origin rolling
           }
 
-      # Generate Rolling Release notes
+      # Generate formatted Rolling Release notes (bullet points)
       - name: Generate Rolling Release notes
         shell: pwsh
         run: |
-          $log = git log rolling..HEAD --pretty=format:"- %s (%h)"
-          if (-not $log) {
-            $log = "- No new commits"
+          $commits = git log rolling..HEAD --pretty=format:"- %s (%h)"
+
+          if (-not $commits) {
+            $commits = "- No changes since last build"
           }
 
           @"
           ## Rolling Release
 
-          Built from commit:
-          `${{ github.sha }}`
+          **Build commit:** `${{ github.sha }}`  
+          **Build date:** $(Get-Date -Format "yyyy-MM-dd HH:mm:ss")
 
           ### Changes since last build
-          $log
+          
+          $commits
           "@ | Out-File release-notes.md -Encoding utf8
 
       # Publish / Update Rolling Release
@@ -102,7 +104,7 @@ jobs:
           artifacts: ${{ github.workspace }}/x64/Release/OptiPatcher-${{ steps.buildtime.outputs.timestamp }}.asi
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      # Move rolling tag forward
+      # Move rolling tag forward so next build only shows new commits
       - name: Move rolling tag to latest commit
         shell: pwsh
         run: |
