@@ -22,6 +22,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           submodules: true
+          fetch-depth: 0   # required for tags + history
 
       - name: Add MSBuild to PATH
         uses: microsoft/setup-msbuild@v2
@@ -30,6 +31,7 @@ jobs:
         working-directory: ${{ env.GITHUB_WORKSPACE }}
         run: msbuild /m /p:Configuration=${{ env.BUILD_CONFIGURATION }} ${{ env.SOLUTION_FILE_PATH }} /verbosity:minimal
 
+      # Generate timestamp
       - name: Generate timestamp
         id: buildtime
         shell: pwsh
@@ -37,14 +39,15 @@ jobs:
           $ts = Get-Date -Format "yyyyMMdd_HHmm"
           echo "timestamp=$ts" >> $env:GITHUB_OUTPUT
 
-      - name: Rename artifact for release
+      # Prepare timestamped ASI
+      - name: Prepare timestamped ASI for release
         shell: pwsh
         run: |
           $src = "${{ github.workspace }}\x64\Release\OptiPatcher.asi"
           $dst = "${{ github.workspace }}\x64\Release\OptiPatcher-${{ steps.buildtime.outputs.timestamp }}.asi"
           Copy-Item $src $dst
 
-      # Upload Actions Artifact (kept per-run)
+      # Upload Actions artifact
       - name: Upload Actions Artifact
         uses: actions/upload-artifact@v4
         with:
@@ -52,6 +55,42 @@ jobs:
           path: ${{ github.workspace }}/x64/Release/OptiPatcher.asi
           if-no-files-found: error
 
+      # Ensure rolling tag exists (auto-init from latest v* tag)
+      - name: Initialize rolling tag if missing
+        shell: pwsh
+        run: |
+          git fetch --tags
+
+          if (-not (git rev-parse rolling 2>$null)) {
+            $base = git describe --tags --abbrev=0 --match "v*" 2>$null
+            if ($base) {
+              git tag rolling $base
+            } else {
+              git tag rolling HEAD
+            }
+            git push origin rolling
+          }
+
+      # Generate Rolling Release notes
+      - name: Generate Rolling Release notes
+        shell: pwsh
+        run: |
+          $log = git log rolling..HEAD --pretty=format:"- %s (%h)"
+          if (-not $log) {
+            $log = "- No new commits"
+          }
+
+          @"
+          ## Rolling Release
+
+          Built from commit:
+          `${{ github.sha }}`
+
+          ### Changes since last build
+          $log
+          "@ | Out-File release-notes.md -Encoding utf8
+
+      # Publish / Update Rolling Release
       - name: Publish Rolling Release
         uses: ncipollo/release-action@v1
         with:
@@ -59,6 +98,13 @@ jobs:
           name: Rolling Release
           allowUpdates: true
           makeLatest: true
-          replacesArtifacts: true
-          artifacts: ${{ github.workspace }}/x64/Release/OptiPatcher.asi
+          bodyFile: release-notes.md
+          artifacts: ${{ github.workspace }}/x64/Release/OptiPatcher-${{ steps.buildtime.outputs.timestamp }}.asi
           token: ${{ secrets.GITHUB_TOKEN }}
+
+      # Move rolling tag forward
+      - name: Move rolling tag to latest commit
+        shell: pwsh
+        run: |
+          git tag -f rolling
+          git push -f origin rolling
